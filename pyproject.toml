@@ -40,6 +40,10 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
 ]
+agent = [
+    "llama-cpp-python>=0.3.0",
+    "huggingface-hub>=0.25.0",
+]
 dashboard = [
     "nodejs-wheel>=20.0",
 ]

@@ -160,6 +160,52 @@ $ virtualize algebra rewrite '[
 # → Original: 7 steps → Optimized: 4 steps (3 eliminated via algebraic laws)
 ```
 
+## Natural Language Agent
+
+Ask in plain English — a small local LLM (Qwen 2.5 1.5B, ~1GB) translates your request into an algebraically validated tool chain. The algebra guarantees safety: invalid plans are rejected before touching any VM.
+
+```bash
+# Install agent dependencies
+pip install -e ".[agent]"
+
+# Ask anything
+virtualize ask "start me a vm that i can connect to openclaw"
+```
+
+Output:
+```
+╭─────────────── Execution Plan ───────────────╮
+│                                               │
+│  1. Create VM 'openclaw-vm'                   │
+│  2. Start VM on 'openclaw-vm'                 │
+│  3. Run `pip install openclaw && python -m    │
+│     openclaw` on 'openclaw-vm'                │
+│                                               │
+╰───────────────────────────────────────────────╯
+  VALID — 3 steps, audit seq → 3
+```
+
+Add `--execute` (`-x`) to actually run the plan. Use `--gpu-layers 0` for CPU-only inference.
+
+### How it works
+
+```
+User (English) → LLM → JSON tool chain → Compositor.validate() → Execute
+                                               ↓ (if invalid)
+                                         Retry with error feedback
+```
+
+The LLM can hallucinate any plan it wants — the algebra's compositor validates every step against the typed transition rules before execution. Invalid plans are fed back to the LLM with the specific algebraic violation for self-correction (up to 2 retries).
+
+### More examples
+
+```bash
+virtualize ask "create a vm called dev-box"
+virtualize ask "check compliance for hipaa"
+virtualize ask "make a vm, start it, and run uname"
+virtualize ask "run print(42) in a sandbox"
+```
+
 ## Quick Start
 
 ### Prerequisites

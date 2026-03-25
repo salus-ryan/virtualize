@@ -364,6 +364,99 @@ def mcp_serve():
 
 
 # ---------------------------------------------------------------------------
+# NL Agent — natural language → algebra
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def ask(
+    query: str = typer.Argument(..., help="Natural language request, e.g. 'start me a vm for openclaw'"),
+    execute: bool = typer.Option(False, "--execute", "-x", help="Execute the plan after validation"),
+    gpu_layers: int = typer.Option(-1, "--gpu-layers", "-g", help="GPU layers for LLM (-1 = all, 0 = CPU only)"),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Path to GGUF model file"),
+):
+    """Ask in plain English — the agent translates to algebraic tool chains."""
+    from pathlib import Path as _Path
+
+    from rich.panel import Panel
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+
+    try:
+        from virtualize.agent.nl_agent import NLAgent
+    except Exception:
+        console.print("[red]Agent dependencies not installed.[/red] Run: [cyan]pip install -e '.[agent]'[/cyan]")
+        raise typer.Exit(code=1)
+
+    # Load model
+    model_path = _Path(model) if model else None
+    agent = NLAgent(model_path=model_path, n_gpu_layers=gpu_layers)
+
+    console.print()
+    console.print(f"  [bold]Query:[/bold] {query}")
+    console.print()
+
+    with Progress(SpinnerColumn(), TextColumn("[bold blue]Thinking..."), console=console, transient=True) as prog:
+        prog.add_task("think", total=None)
+        result = agent.plan(query)
+
+    if result.error:
+        console.print(f"[red]Error:[/red] {result.error}")
+        raise typer.Exit(code=1)
+
+    # Show plan
+    console.print(Panel(
+        result.explanation,
+        title="[bold]Execution Plan[/bold]",
+        border_style="blue",
+        padding=(1, 2),
+    ))
+
+    # Show validation
+    if result.validation and result.validation.valid:
+        state = result.validation.final_state
+        console.print(f"  [green]VALID[/green] — {result.validation.steps_validated} steps, "
+                      f"audit seq → {state.audit_sequence}")
+    else:
+        console.print(f"  [red]INVALID[/red]")
+        if result.validation:
+            for err in result.validation.errors:
+                console.print(f"    [red]{err.message}[/red]")
+        raise typer.Exit(code=1)
+
+    # Show raw plan
+    console.print(f"\n  [dim]JSON: {json.dumps(result.plan)}[/dim]")
+
+    if not execute:
+        console.print(f"\n  [dim]Add --execute (-x) to run this plan.[/dim]\n")
+        return
+
+    # Execute
+    console.print()
+    proceed = typer.confirm("Execute this plan?", default=True)
+    if not proceed:
+        console.print("[dim]Cancelled.[/dim]")
+        raise typer.Exit(code=0)
+
+    console.print()
+    with Progress(SpinnerColumn(), TextColumn("[bold]Executing..."), console=console, transient=True) as prog:
+        prog.add_task("exec", total=None)
+        result = _run(agent.plan_and_execute(query))
+
+    if result.error:
+        console.print(f"[red]Execution error:[/red] {result.error}")
+
+    for step in result.execution_results:
+        tool = step.get("tool", "?")
+        if "error" in step:
+            console.print(f"  [red]✗[/red] {tool}: {step['error']}")
+        else:
+            status = step.get("status", step.get("stdout", "done"))
+            console.print(f"  [green]✓[/green] {tool}: {status}")
+
+    console.print()
+
+
+# ---------------------------------------------------------------------------
 # Algebra commands
 # ---------------------------------------------------------------------------
 
