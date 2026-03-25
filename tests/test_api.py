@@ -43,7 +43,7 @@ class TestVMEndpoints:
         assert data["name"] == "test-vm"
         assert data["status"] == "creating"
         assert data["vcpus"] == 1
-        return data["id"]
+        assert "id" in data
 
     def test_create_and_list(self, client):
         client.post("/api/v1/vms", json={"name": "vm-1"})
