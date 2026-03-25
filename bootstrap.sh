@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-REPO_URL="https://github.com/jmanhype/virtualize.git"
+REPO_URL="https://github.com/salus-ryan/virtualize.git"
 INSTALL_DIR="${VIRTUALIZE_DIR:-$HOME/virtualize}"
 
 # Colors
