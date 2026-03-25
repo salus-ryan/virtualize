@@ -242,15 +242,36 @@ CHEATSHEET
 echo ""
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Launch the interactive shell — the user can just start talking
+# Launch the interactive shell
 # ═══════════════════════════════════════════════════════════════════════════
 
-echo -e "${BOLD}Launching interactive shell...${NC}"
-echo -e "${DIM}Just type what you want in plain English.${NC}"
-echo ""
+# Write a one-shot launcher: next time the user opens a shell, it auto-starts.
+# The snippet deletes itself after running once.
+LAUNCHER="$INSTALL_DIR/.virtualize_autostart.sh"
+cat > "$LAUNCHER" << 'AUTOSTART'
+# Virtualize auto-start (one-shot — deletes itself after running)
+if [ -t 0 ] && [ -t 1 ]; then
+    VDIR="__INSTALL_DIR__"
+    rm -f "$VDIR/.virtualize_autostart.sh"
+    sed -i '/\.virtualize_autostart\.sh/d' ~/.bashrc 2>/dev/null || true
+    cd "$VDIR" && source .venv/bin/activate && exec virtualize
+fi
+AUTOSTART
+sed -i "s|__INSTALL_DIR__|$INSTALL_DIR|g" "$LAUNCHER"
 
-# When run via "curl ... | bash", stdin is the curl pipe, not the terminal.
-# We can't just "exec virtualize" because bash is still in pipe/script mode.
-# Solution: spawn a NEW bash process with stdin explicitly from /dev/tty,
-# which then runs virtualize. This is the same pattern used by rustup/nvm.
-bash --login -c "cd $INSTALL_DIR && source .venv/bin/activate && virtualize" </dev/tty
+# Add to bashrc (will self-remove after one run)
+if ! grep -q "virtualize_autostart" ~/.bashrc 2>/dev/null; then
+    echo "" >> ~/.bashrc
+    echo "# Virtualize auto-start (one-shot)" >> ~/.bashrc
+    echo "[ -f \"$INSTALL_DIR/.virtualize_autostart.sh\" ] && source \"$INSTALL_DIR/.virtualize_autostart.sh\"" >> ~/.bashrc
+fi
+
+echo ""
+echo -e "${BOLD}${GREEN}All done!${NC} The interactive shell will start when you open a new terminal."
+echo ""
+echo -e "Or start it right now by running:"
+echo ""
+echo -e "    ${CYAN}cd $INSTALL_DIR && source .venv/bin/activate && virtualize${NC}"
+echo ""
+echo -e "${DIM}(Just type that, or open a new terminal tab.)${NC}"
+echo ""
