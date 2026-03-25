@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 from typing import Optional
 
@@ -99,12 +100,22 @@ def _interactive_shell():
         console.print("[dim]Or use explicit commands: virtualize --help[/dim]")
         raise typer.Exit(code=1)
 
-    # Load model once
+    # Load model once (suppress C-level stderr from llama.cpp during load)
     with Progress(SpinnerColumn(), TextColumn("[bold blue]Loading model (first time may download ~1GB)..."),
                   console=console, transient=True) as prog:
         prog.add_task("load", total=None)
-        agent = NLAgent(n_gpu_layers=-1)
-        agent._ensure_llm()
+        import sys
+        sys.stderr.flush()
+        stderr_fd = os.dup(2)
+        try:
+            devnull_fd = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull_fd, 2)
+            os.close(devnull_fd)
+            agent = NLAgent(n_gpu_layers=-1)
+            agent._ensure_llm()
+        finally:
+            os.dup2(stderr_fd, 2)
+            os.close(stderr_fd)
 
     console.print("[green]Ready.[/green]")
     console.print()
