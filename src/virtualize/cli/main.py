@@ -167,11 +167,11 @@ def _interactive_shell():
             console.print("  [dim]Skipped.[/dim]\n")
             continue
 
-        # Execute
+        # Execute (reuse the already-validated plan, don't re-run the LLM)
         with Progress(SpinnerColumn(), TextColumn("[bold]Executing..."),
                       console=console, transient=True) as prog:
             prog.add_task("exec", total=None)
-            exec_result = _run(agent.plan_and_execute(user_input, manager=manager))
+            exec_result = _run(agent.execute_plan(result, manager=manager))
 
         console.print()
         for step in exec_result.execution_results:

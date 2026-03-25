@@ -269,13 +269,21 @@ class NLAgent:
         ]
 
         for attempt in range(1 + self._max_retries):
-            # Generate
-            response = llm.create_chat_completion(
-                messages=messages,
-                max_tokens=512,
-                temperature=0.1,
-                stop=["```", "\n\n\n"],
-            )
+            # Generate (suppress C-level stderr from llama.cpp during inference)
+            stderr_fd = os.dup(2)
+            try:
+                devnull_fd = os.open(os.devnull, os.O_WRONLY)
+                os.dup2(devnull_fd, 2)
+                os.close(devnull_fd)
+                response = llm.create_chat_completion(
+                    messages=messages,
+                    max_tokens=512,
+                    temperature=0.1,
+                    stop=["```", "\n\n\n"],
+                )
+            finally:
+                os.dup2(stderr_fd, 2)
+                os.close(stderr_fd)
 
             raw = response["choices"][0]["message"]["content"].strip()
             logger.debug("LLM attempt %d: %s", attempt, raw)
@@ -325,6 +333,43 @@ class NLAgent:
 
         return result
 
+    async def execute_plan(
+        self,
+        result: AgentResult,
+        manager=None,
+        actor: str = "agent",
+    ) -> AgentResult:
+        """Execute an already-validated plan (no re-running the LLM)."""
+        from virtualize.core.manager import VMManager
+
+        if manager is None:
+            from virtualize.compliance.audit import AuditLog
+            audit = AuditLog()
+            manager = VMManager(audit_callback=audit.record)
+
+        if not result.plan or (result.validation and not result.validation.valid):
+            return result
+
+        # Execute each step
+        result.executed = True
+        vm_name_to_id: dict[str, str] = {}
+        for tool_name, vm_id, args in result.plan:
+            # Resolve vm_id: if a previous vm_create gave us a real ID, use it
+            resolved_id = vm_name_to_id.get(vm_id, vm_id) if vm_id else vm_id
+            try:
+                step_result = await self._execute_step(manager, tool_name, resolved_id, args, actor)
+                result.execution_results.append(step_result)
+                # Track name → real ID mapping from vm_create
+                if tool_name == "vm_create" and "vm_id" in step_result:
+                    name = args.get("name", "")
+                    vm_name_to_id[name] = step_result["vm_id"]
+            except Exception as e:
+                result.execution_results.append({"tool": tool_name, "error": str(e)})
+                result.error = f"Execution failed at {tool_name}: {e}"
+                break
+
+        return result
+
     async def plan_and_execute(
         self,
         query: str,
@@ -343,18 +388,7 @@ class NLAgent:
         if result.error or not result.validation or not result.validation.valid:
             return result
 
-        # Execute each step
-        result.executed = True
-        for tool_name, vm_id, args in result.plan:
-            try:
-                step_result = await self._execute_step(manager, tool_name, vm_id, args, actor)
-                result.execution_results.append(step_result)
-            except Exception as e:
-                result.execution_results.append({"tool": tool_name, "error": str(e)})
-                result.error = f"Execution failed at {tool_name}: {e}"
-                break
-
-        return result
+        return await self.execute_plan(result, manager=manager, actor=actor)
 
     async def _execute_step(
         self, manager, tool_name: str, vm_id: str | None, args: dict, actor: str
