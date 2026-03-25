@@ -249,4 +249,7 @@ echo -e "${BOLD}Launching interactive shell...${NC}"
 echo -e "${DIM}Just type what you want in plain English.${NC}"
 echo ""
 
+# When run via "curl ... | bash", stdin is the pipe (not the terminal).
+# Reconnect stdin to /dev/tty so the interactive shell can read input.
+exec </dev/tty
 exec virtualize
