@@ -90,7 +90,7 @@ source .venv/bin/activate
 # ── Step 4: Install ─────────────────────────────────────────────────────
 
 info "Installing Virtualize + dependencies..."
-pip install -q -e ".[dev]" 2>&1 | tail -1
+pip install -q -e ".[dev,agent]" 2>&1 | tail -1
 ok "Installed"
 
 # ── Step 5: OS detection + QEMU setup ──────────────────────────────────
@@ -240,3 +240,13 @@ cat << 'CHEATSHEET'
 CHEATSHEET
 
 echo ""
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Launch the interactive shell — the user can just start talking
+# ═══════════════════════════════════════════════════════════════════════════
+
+echo -e "${BOLD}Launching interactive shell...${NC}"
+echo -e "${DIM}Just type what you want in plain English.${NC}"
+echo ""
+
+exec virtualize
