@@ -115,6 +115,7 @@ class VMInstance(BaseModel):
     stopped_at: datetime | None = None
     error: str | None = None
     hypervisor: str | None = None  # qemu, hyperkit, hyperv
+    ssh_key_path: str | None = None
 
     @property
     def uptime_seconds(self) -> float | None:
