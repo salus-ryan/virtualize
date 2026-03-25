@@ -249,7 +249,8 @@ echo -e "${BOLD}Launching interactive shell...${NC}"
 echo -e "${DIM}Just type what you want in plain English.${NC}"
 echo ""
 
-# When run via "curl ... | bash", stdin is the pipe (not the terminal).
-# Reconnect stdin to /dev/tty so the interactive shell can read input.
-exec </dev/tty
-exec virtualize
+# When run via "curl ... | bash", stdin is the curl pipe, not the terminal.
+# We can't just "exec virtualize" because bash is still in pipe/script mode.
+# Solution: spawn a NEW bash process with stdin explicitly from /dev/tty,
+# which then runs virtualize. This is the same pattern used by rustup/nvm.
+bash --login -c "cd $INSTALL_DIR && source .venv/bin/activate && virtualize" </dev/tty
