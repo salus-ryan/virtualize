@@ -190,10 +190,21 @@ def _interactive_shell():
             if "error" in step:
                 console.print(f"  [red]✗[/red] {tool}: {step['error']}")
             else:
-                status = step.get("status", step.get("stdout", "done"))
                 vm_id = step.get("vm_id", "")
-                extra = f" ({vm_id})" if vm_id else ""
-                console.print(f"  [green]✓[/green] {tool}{extra}: {status}")
+                extra = f" [dim]({vm_id})[/dim]" if vm_id else ""
+                status = step.get("status", "done")
+                console.print(f"  [green]✓[/green] {tool}{extra} — {status}")
+                # Show stdout/stderr for exec results
+                stdout = step.get("stdout", "")
+                stderr = step.get("stderr", "")
+                if stdout:
+                    for line in stdout.strip().splitlines():
+                        console.print(f"    [dim]{line}[/dim]")
+                elif stderr:
+                    for line in stderr.strip().splitlines():
+                        console.print(f"    [yellow]{line}[/yellow]")
+                elif tool == "vm_exec":
+                    console.print(f"    [dim](mock hypervisor — no real output)[/dim]")
 
         if exec_result.error:
             console.print(f"\n  [red]{exec_result.error}[/red]")

@@ -15,9 +15,12 @@ but only algebraically valid plans reach the hypervisor.
 
 from __future__ import annotations
 
+# Suppress llama.cpp C-level warnings before any import of llama_cpp
+import os
+os.environ.setdefault("GGML_LOG_LEVEL", "error")
+
 import json
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -75,8 +78,6 @@ def ensure_model(repo: str | None = None, filename: str | None = None) -> Path:
 
 def load_llm(model_path: Path | None = None, n_ctx: int = 2048, n_gpu_layers: int = -1):
     """Load the LLM. Returns a llama_cpp.Llama instance."""
-    # Suppress llama.cpp C-level log messages before importing
-    os.environ.setdefault("GGML_LOG_LEVEL", "error")
     try:
         from llama_cpp import Llama
     except ImportError:
