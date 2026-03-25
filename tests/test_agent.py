@@ -264,7 +264,7 @@ class TestClarification:
         result = agent.plan("run something")
 
         assert result.clarification is not None
-        assert "what would you like to run" in result.clarification.lower()
+        assert "more detail" in result.clarification.lower()
         assert result.error is None
         assert len(result.plan) == 0
 
@@ -274,7 +274,7 @@ class TestClarification:
         result = agent.plan("hello")
 
         assert result.clarification is not None
-        assert "help you" in result.clarification.lower()
+        assert "virtualize" in result.clarification.lower()
         assert result.error is None
 
     def test_hi_returns_clarification(self):
@@ -317,6 +317,47 @@ class TestClarification:
     def test_extract_clarification_garbage(self):
         agent = NLAgent(llm=_make_mock_llm([]))
         assert agent._extract_clarification('hello world') is None
+
+    def test_whats_your_name(self):
+        agent = NLAgent(llm=_make_mock_llm([]))
+        result = agent.plan("what's your name")
+        assert result.clarification is not None
+        assert "virtualize" in result.clarification.lower()
+
+    def test_who_are_you(self):
+        agent = NLAgent(llm=_make_mock_llm([]))
+        result = agent.plan("who are you?")
+        assert result.clarification is not None
+        assert "virtualize" in result.clarification.lower()
+
+    def test_how_does_it_work(self):
+        agent = NLAgent(llm=_make_mock_llm([]))
+        result = agent.plan("how does this work?")
+        assert result.clarification is not None
+        assert "algebra" in result.clarification.lower()
+
+    def test_what_is_the_algebra(self):
+        agent = NLAgent(llm=_make_mock_llm([]))
+        result = agent.plan("what's the algebra?")
+        assert result.clarification is not None
+        assert "monoidal" in result.clarification.lower()
+
+    def test_are_you_a_bot(self):
+        agent = NLAgent(llm=_make_mock_llm([]))
+        result = agent.plan("are you an AI?")
+        assert result.clarification is not None
+        assert "agent" in result.clarification.lower()
+
+    def test_thanks(self):
+        agent = NLAgent(llm=_make_mock_llm([]))
+        result = agent.plan("thanks!")
+        assert result.clarification is not None
+        assert "welcome" in result.clarification.lower()
+
+    def test_goodbye(self):
+        agent = NLAgent(llm=_make_mock_llm([]))
+        result = agent.plan("bye")
+        assert result.clarification is not None
 
     def test_clear_input_still_plans(self):
         """Clear inputs should produce plans, not clarifications."""

@@ -75,6 +75,8 @@ def ensure_model(repo: str | None = None, filename: str | None = None) -> Path:
 
 def load_llm(model_path: Path | None = None, n_ctx: int = 2048, n_gpu_layers: int = -1):
     """Load the LLM. Returns a llama_cpp.Llama instance."""
+    # Suppress llama.cpp C-level log messages before importing
+    os.environ.setdefault("GGML_LOG_LEVEL", "error")
     try:
         from llama_cpp import Llama
     except ImportError:
@@ -217,7 +219,10 @@ class NLAgent:
             self._llm = load_llm(self._model_path, n_gpu_layers=self._n_gpu_layers)
         return self._llm
 
-    # Common non-actionable inputs → instant clarification (no LLM needed)
+    # ── Conversational fast-paths (no LLM needed) ─────────────────────────
+    # Patterns → instant responses for greetings, identity, help, vague input.
+    # This gives the agent personality without burning LLM tokens.
+
     _GREETING_WORDS = frozenset({
         "hi", "hey", "hello", "yo", "sup", "howdy", "hola", "greetings",
         "hii", "hiii", "heya", "whats up", "what's up", "wassup",
@@ -227,39 +232,114 @@ class NLAgent:
         "run something", "do something", "do stuff", "run stuff",
         "make something", "build something", "idk", "dunno",
     })
+    _THANKS_WORDS = frozenset({
+        "thanks", "thank you", "thx", "ty", "cheers", "appreciate it",
+        "thanks a lot", "thank u", "cool thanks",
+    })
+    _GOODBYE_WORDS = frozenset({
+        "bye", "goodbye", "later", "see ya", "see you", "cya", "peace",
+        "gotta go", "ttyl",
+    })
 
     _GREETING_RESPONSE = (
-        "Hey! I can help you manage VMs, run code, or check compliance. "
-        "What would you like to do?"
+        "Hey! I'm Virtualize — your VM orchestration assistant. "
+        "I can create and manage virtual machines, run code in sandboxes, "
+        "check compliance, and more. What would you like to do?"
     )
     _HELP_RESPONSE = (
-        "I can: create/start/stop/destroy VMs, run commands inside VMs, "
-        "execute sandboxed code, check compliance (soc2, hipaa, iso27001), "
-        "or verify the algebra. What do you need?"
+        "Here's what I can do:\n"
+        "  • VM lifecycle: 'create a vm', 'start my-vm', 'stop my-vm'\n"
+        "  • Run commands: 'run uname on my-vm'\n"
+        "  • Sandbox code: 'run print(42) in a sandbox'\n"
+        "  • Compliance: 'check soc2 compliance', 'hipaa report'\n"
+        "  • Algebra: 'verify the algebra', 'show the state machine'\n"
+        "  • Or just describe what you want in plain English!"
     )
     _VAGUE_RESPONSE = (
-        "What would you like to run? For example:\n"
-        "  - A shell command in a VM: 'create a vm and run uname'\n"
-        "  - Python code in a sandbox: 'run print(42) in sandbox'\n"
-        "  - A compliance check: 'check hipaa compliance'"
+        "I'd love to help, but I need a bit more detail. For example:\n"
+        "  • 'create a vm called dev-box and run uname'\n"
+        "  • 'run print(42) in a python sandbox'\n"
+        "  • 'check hipaa compliance'\n"
+        "  • 'verify the algebra'\n"
+        "What are you looking to do?"
     )
+    _THANKS_RESPONSE = (
+        "You're welcome! Let me know if you need anything else."
+    )
+    _GOODBYE_RESPONSE = (
+        "See you! Run 'virtualize' anytime to come back."
+    )
+
+    # Regex patterns for identity/conversational questions
+    _IDENTITY_PATTERNS = [
+        (re.compile(r"what(?:'s| is) your name", re.I),
+         "I'm Virtualize — a VM orchestration agent. I translate plain English "
+         "into algebraically verified VM operations. Think of me as your "
+         "infrastructure assistant."),
+        (re.compile(r"who are you", re.I),
+         "I'm Virtualize, an AI agent that manages virtual machines. "
+         "I use a formal algebra to make sure every operation is safe "
+         "before touching anything. Ask me to create a VM, run code, "
+         "or check compliance!"),
+        (re.compile(r"what can you do|what do you do|what are you", re.I),
+         "I orchestrate virtual machines using a formally verified algebra. "
+         "That means I can create, start, stop, and destroy VMs, run commands "
+         "inside them, execute sandboxed code, and generate compliance reports "
+         "— all validated mathematically before execution."),
+        (re.compile(r"how do(?:es)? (?:this|it|you) work", re.I),
+         "Every VM operation is a typed morphism in a formal algebra. "
+         "When you ask me to do something, I:\n"
+         "  1. Translate your request into a plan (a chain of operations)\n"
+         "  2. Validate the plan against the algebra's rules\n"
+         "  3. Show you the plan and ask for confirmation\n"
+         "  4. Execute it if you approve\n"
+         "Invalid plans are caught before anything happens."),
+        (re.compile(r"(?:are you|you) (?:an? )?(?:ai|bot|robot|llm|model)", re.I),
+         "I'm an AI agent backed by a small local language model, "
+         "but my real power is the algebraic engine underneath. "
+         "The LLM translates your English into plans; the algebra "
+         "guarantees they're safe."),
+        (re.compile(r"what(?:'s| is) (?:the )?algebra", re.I),
+         "The Virtualize algebra is a typed, finite, partially-defined "
+         "monoidal category. In plain English: it's a set of rules that "
+         "define which VM operations are valid in which order. "
+         "For example, you can't run a command on a VM that doesn't exist. "
+         "Run 'virtualize algebra verify' to see all 6 axioms checked."),
+    ]
 
     def plan(self, query: str, system_state: SystemState | None = None) -> AgentResult:
         """Generate and validate a plan from natural language."""
         result = AgentResult(query=query, plan=[])
 
-        # Fast-path: handle common non-actionable inputs without the LLM
+        # Fast-path: handle conversational inputs without the LLM
         q_raw = query.strip().lower()
         q = q_raw.rstrip("!?.,:;")
+
+        # Greetings
         if q in self._GREETING_WORDS or q_raw in self._GREETING_WORDS:
             result.clarification = self._GREETING_RESPONSE
             return result
+        # Help
         if q in self._HELP_WORDS or q_raw in self._HELP_WORDS:
             result.clarification = self._HELP_RESPONSE
             return result
+        # Vague requests
         if q in self._VAGUE_PATTERNS or q_raw in self._VAGUE_PATTERNS:
             result.clarification = self._VAGUE_RESPONSE
             return result
+        # Thanks
+        if q in self._THANKS_WORDS or q_raw in self._THANKS_WORDS:
+            result.clarification = self._THANKS_RESPONSE
+            return result
+        # Goodbye
+        if q in self._GOODBYE_WORDS or q_raw in self._GOODBYE_WORDS:
+            result.clarification = self._GOODBYE_RESPONSE
+            return result
+        # Identity & conversational questions (regex)
+        for pattern, response in self._IDENTITY_PATTERNS:
+            if pattern.search(query):
+                result.clarification = response
+                return result
 
         llm = self._ensure_llm()
 
