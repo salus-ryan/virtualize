@@ -86,12 +86,23 @@ def load_llm(model_path: Path | None = None, n_ctx: int = 2048, n_gpu_layers: in
         model_path = ensure_model()
 
     logger.info("Loading model from %s", model_path)
-    return Llama(
-        model_path=str(model_path),
-        n_ctx=n_ctx,
-        n_gpu_layers=n_gpu_layers,
-        verbose=False,
-    )
+    # Suppress C-level stderr warnings from llama.cpp (e.g. "n_ctx_seq < n_ctx_train")
+    # Python's redirect_stderr doesn't catch C++ writes, so we redirect at fd level.
+    stderr_fd = os.dup(2)
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, 2)
+        os.close(devnull)
+        model = Llama(
+            model_path=str(model_path),
+            n_ctx=n_ctx,
+            n_gpu_layers=n_gpu_layers,
+            verbose=False,
+        )
+    finally:
+        os.dup2(stderr_fd, 2)
+        os.close(stderr_fd)
+    return model
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -206,10 +217,51 @@ class NLAgent:
             self._llm = load_llm(self._model_path, n_gpu_layers=self._n_gpu_layers)
         return self._llm
 
+    # Common non-actionable inputs → instant clarification (no LLM needed)
+    _GREETING_WORDS = frozenset({
+        "hi", "hey", "hello", "yo", "sup", "howdy", "hola", "greetings",
+        "hii", "hiii", "heya", "whats up", "what's up", "wassup",
+    })
+    _HELP_WORDS = frozenset({"help", "?", "commands", "what can you do", "menu"})
+    _VAGUE_PATTERNS = frozenset({
+        "run something", "do something", "do stuff", "run stuff",
+        "make something", "build something", "idk", "dunno",
+    })
+
+    _GREETING_RESPONSE = (
+        "Hey! I can help you manage VMs, run code, or check compliance. "
+        "What would you like to do?"
+    )
+    _HELP_RESPONSE = (
+        "I can: create/start/stop/destroy VMs, run commands inside VMs, "
+        "execute sandboxed code, check compliance (soc2, hipaa, iso27001), "
+        "or verify the algebra. What do you need?"
+    )
+    _VAGUE_RESPONSE = (
+        "What would you like to run? For example:\n"
+        "  - A shell command in a VM: 'create a vm and run uname'\n"
+        "  - Python code in a sandbox: 'run print(42) in sandbox'\n"
+        "  - A compliance check: 'check hipaa compliance'"
+    )
+
     def plan(self, query: str, system_state: SystemState | None = None) -> AgentResult:
         """Generate and validate a plan from natural language."""
-        llm = self._ensure_llm()
         result = AgentResult(query=query, plan=[])
+
+        # Fast-path: handle common non-actionable inputs without the LLM
+        q_raw = query.strip().lower()
+        q = q_raw.rstrip("!?.,:;")
+        if q in self._GREETING_WORDS or q_raw in self._GREETING_WORDS:
+            result.clarification = self._GREETING_RESPONSE
+            return result
+        if q in self._HELP_WORDS or q_raw in self._HELP_WORDS:
+            result.clarification = self._HELP_RESPONSE
+            return result
+        if q in self._VAGUE_PATTERNS or q_raw in self._VAGUE_PATTERNS:
+            result.clarification = self._VAGUE_RESPONSE
+            return result
+
+        llm = self._ensure_llm()
 
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},

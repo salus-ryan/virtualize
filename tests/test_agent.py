@@ -259,28 +259,50 @@ class TestStateAware:
 
 class TestClarification:
     def test_vague_input_returns_clarification(self):
-        """Vague input like 'run something' should trigger clarification."""
-        llm = _make_mock_llm(['{"clarify": "What would you like to run?"}'])
-        agent = NLAgent(llm=llm)
+        """Vague input like 'run something' should trigger fast-path clarification."""
+        agent = NLAgent(llm=_make_mock_llm([]))
         result = agent.plan("run something")
 
         assert result.clarification is not None
-        assert "run" in result.clarification.lower()
+        assert "what would you like to run" in result.clarification.lower()
         assert result.error is None
         assert len(result.plan) == 0
 
     def test_hello_returns_clarification(self):
-        llm = _make_mock_llm(['{"clarify": "Hey! What would you like to do?"}'])
-        agent = NLAgent(llm=llm)
+        """Greetings should trigger fast-path clarification."""
+        agent = NLAgent(llm=_make_mock_llm([]))
         result = agent.plan("hello")
 
         assert result.clarification is not None
+        assert "help you" in result.clarification.lower()
         assert result.error is None
+
+    def test_hi_returns_clarification(self):
+        agent = NLAgent(llm=_make_mock_llm([]))
+        result = agent.plan("hi")
+        assert result.clarification is not None
+
+    def test_help_returns_clarification(self):
+        agent = NLAgent(llm=_make_mock_llm([]))
+        result = agent.plan("help")
+        assert result.clarification is not None
+        assert "create" in result.clarification.lower()
+
+    def test_greeting_with_punctuation(self):
+        agent = NLAgent(llm=_make_mock_llm([]))
+        result = agent.plan("hi!")
+        assert result.clarification is not None
+
+    def test_greeting_with_caps(self):
+        """Greetings should be case-insensitive."""
+        agent = NLAgent(llm=_make_mock_llm([]))
+        result = agent.plan("HI")
+        assert result.clarification is not None
 
     def test_clarification_embedded_in_text(self):
         raw = 'Sure! {"clarify": "Could you be more specific?"} Let me know.'
         agent = NLAgent(llm=_make_mock_llm([raw]))
-        result = agent.plan("do stuff")
+        result = agent.plan("maybe do a thing with the server or whatever")
 
         assert result.clarification == "Could you be more specific?"
 
