@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "virtualize"
+version = "0.1.0"
+description = "Free, cross-platform VM orchestration for AI workflows with MCP integration and compliance-ready architecture"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [{ name = "Virtualize Contributors" }]
+keywords = ["virtualization", "ai", "mcp", "sandboxing", "compliance"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Emulators",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.0",
+    "typer[all]>=0.12.0",
+    "rich>=13.0",
+    "httpx>=0.27.0",
+    "websockets>=13.0",
+    "cryptography>=43.0",
+    "mcp>=1.0.0",
+    "psutil>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+dashboard = [
+    "nodejs-wheel>=20.0",
+]
+
+[project.scripts]
+virtualize = "virtualize.cli.main:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/virtualize"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

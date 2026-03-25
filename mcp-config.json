@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "virtualize": {
+      "command": "python",
+      "args": ["-m", "virtualize.mcp_server.server"],
+      "env": {},
+      "description": "Virtualize — VM orchestration for AI workflows with sandboxed execution and compliance"
+    }
+  }
+}
