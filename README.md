@@ -4,6 +4,8 @@
 
 Virtualize gives AI agents (and humans) full VM lifecycle management with built-in MCP integration, sandboxed code execution, and a compliance-ready architecture (SOC 1/2/3, HIPAA, ISO 27001).
 
+> **LLMs**: Read [`AGENTS.md`](AGENTS.md) for machine-readable project context, algebra definitions, tool chain format, and architecture invariants.
+
 ![Virtualization](image.png)
 
 ## Why Virtualize?
@@ -47,7 +49,7 @@ Virtualize is:
 - Pre-built image support with copy-on-write overlays
 
 ### MCP Server (for AI Agents)
-- **12 tools** exposed via the Model Context Protocol
+- **13 tools** exposed via the Model Context Protocol
 - `vm_create`, `vm_start`, `vm_stop`, `vm_destroy` — full lifecycle
 - `vm_exec` — run commands inside VMs
 - `sandbox_run` — one-shot isolated code execution
@@ -369,23 +371,30 @@ mypy src/
 virtualize/
 ├── src/virtualize/
 │   ├── core/
-│   │   ├── models.py        # Data models (VM, Exec, Audit)
-│   │   ├── hypervisor.py    # Cross-platform hypervisor abstraction
-│   │   └── manager.py       # VM lifecycle orchestration
+│   │   ├── algebra.py         # Formal algebra: states, transitions, compositor, axioms
+│   │   ├── models.py          # Pydantic data models (VMConfig, VMInstance, AuditEvent)
+│   │   ├── manager.py         # VM lifecycle orchestration with algebraic pre-validation
+│   │   ├── hypervisor.py      # Cross-platform QEMU abstraction (KVM/HVF/WHPX)
+│   │   ├── mock_hypervisor.py # Mock backend for dev/testing without QEMU
+│   │   └── bootstrap.py       # OS-detecting setup system
+│   ├── agent/
+│   │   └── nl_agent.py        # NL→algebra agent (local LLM → validated tool chains)
 │   ├── sandbox/
-│   │   └── executor.py      # Sandboxed code execution engine
+│   │   └── executor.py        # Sandboxed code execution with pooled VMs
 │   ├── compliance/
-│   │   ├── audit.py         # Integrity-chained audit logging
-│   │   └── policies.py      # SOC/HIPAA/ISO policy controls
+│   │   ├── audit.py           # Append-only, integrity-chained audit log (SHA-256 HMAC)
+│   │   └── policies.py        # SOC 1/2/3, HIPAA, ISO 27001 policy controls
 │   ├── mcp_server/
-│   │   └── server.py        # MCP server (13 tools)
+│   │   └── server.py          # MCP server — 13 tools over stdio transport
 │   ├── api/
-│   │   ├── server.py        # FastAPI REST server
-│   │   └── dashboard.py     # Built-in web dashboard
+│   │   ├── server.py          # FastAPI REST server (port 8420)
+│   │   └── dashboard.py       # Built-in React/Tailwind web dashboard
 │   └── cli/
-│       └── main.py          # Typer CLI
-├── tests/
-├── mcp-config.json           # MCP client configuration
+│       └── main.py            # Typer CLI (lifecycle, sandbox, compliance, algebra, ask)
+├── tests/                     # 103 tests (algebra, agent, API, compliance, models)
+├── AGENTS.md                  # Machine-readable context for LLMs
+├── bootstrap.sh               # One-line clone + setup script
+├── mcp-config.json            # MCP client configuration
 ├── pyproject.toml
 └── README.md
 ```
