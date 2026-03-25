@@ -252,5 +252,59 @@ class TestStateAware:
         assert result.validation.valid is False
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# §6  Clarification handling
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestClarification:
+    def test_vague_input_returns_clarification(self):
+        """Vague input like 'run something' should trigger clarification."""
+        llm = _make_mock_llm(['{"clarify": "What would you like to run?"}'])
+        agent = NLAgent(llm=llm)
+        result = agent.plan("run something")
+
+        assert result.clarification is not None
+        assert "run" in result.clarification.lower()
+        assert result.error is None
+        assert len(result.plan) == 0
+
+    def test_hello_returns_clarification(self):
+        llm = _make_mock_llm(['{"clarify": "Hey! What would you like to do?"}'])
+        agent = NLAgent(llm=llm)
+        result = agent.plan("hello")
+
+        assert result.clarification is not None
+        assert result.error is None
+
+    def test_clarification_embedded_in_text(self):
+        raw = 'Sure! {"clarify": "Could you be more specific?"} Let me know.'
+        agent = NLAgent(llm=_make_mock_llm([raw]))
+        result = agent.plan("do stuff")
+
+        assert result.clarification == "Could you be more specific?"
+
+    def test_extract_clarification_clean_json(self):
+        agent = NLAgent(llm=_make_mock_llm([]))
+        assert agent._extract_clarification('{"clarify": "What?"}') == "What?"
+
+    def test_extract_clarification_not_present(self):
+        agent = NLAgent(llm=_make_mock_llm([]))
+        assert agent._extract_clarification('[["vm_create", null, {}]]') is None
+
+    def test_extract_clarification_garbage(self):
+        agent = NLAgent(llm=_make_mock_llm([]))
+        assert agent._extract_clarification('hello world') is None
+
+    def test_clear_input_still_plans(self):
+        """Clear inputs should produce plans, not clarifications."""
+        llm = _make_mock_llm(['[["vm_create", null, {"name": "x"}]]'])
+        agent = NLAgent(llm=llm)
+        result = agent.plan("create a vm called x")
+
+        assert result.clarification is None
+        assert result.validation.valid is True
+
+
 # Need json import for plan_json construction
 import json

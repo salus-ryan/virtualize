@@ -40,7 +40,8 @@ from virtualize.core.models import (
 app = typer.Typer(
     name="virtualize",
     help="Free, cross-platform VM orchestration for AI workflows",
-    no_args_is_help=True,
+    no_args_is_help=False,
+    invoke_without_command=True,
 )
 console = Console()
 
@@ -64,6 +65,128 @@ def _get_manager() -> tuple[VMManager, AuditLog]:
     audit_log = AuditLog()
     manager = VMManager(audit_callback=audit_log.record)
     return manager, audit_log
+
+
+@app.callback()
+def main_callback(ctx: typer.Context):
+    """Launch interactive shell if no subcommand is given."""
+    if ctx.invoked_subcommand is None:
+        _interactive_shell()
+
+
+def _interactive_shell():
+    """Interactive REPL — every input goes through the NL agent."""
+    from rich.panel import Panel
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+
+    console.print()
+    console.print(Panel(
+        "[bold]Virtualize Interactive Shell[/bold]\n\n"
+        "Type anything in plain English. I'll figure out what to do.\n"
+        "Examples: 'create a vm', 'check hipaa compliance', 'help'\n\n"
+        "[dim]Type 'exit' or 'quit' to leave. Ctrl+C works too.[/dim]",
+        border_style="blue",
+        padding=(1, 2),
+    ))
+    console.print()
+
+    try:
+        from virtualize.agent.nl_agent import NLAgent
+    except Exception:
+        console.print("[red]Agent dependencies not installed.[/red]")
+        console.print("Run: [cyan]pip install -e '.[agent]'[/cyan]")
+        console.print()
+        console.print("[dim]Or use explicit commands: virtualize --help[/dim]")
+        raise typer.Exit(code=1)
+
+    # Load model once
+    with Progress(SpinnerColumn(), TextColumn("[bold blue]Loading model (first time may download ~1GB)..."),
+                  console=console, transient=True) as prog:
+        prog.add_task("load", total=None)
+        agent = NLAgent(n_gpu_layers=-1)
+        agent._ensure_llm()
+
+    console.print("[green]Ready.[/green]")
+    console.print()
+
+    manager, audit_log = _get_manager()
+
+    while True:
+        try:
+            user_input = console.input("[bold cyan]virtualize>[/bold cyan] ").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[dim]Goodbye.[/dim]")
+            break
+
+        if not user_input:
+            continue
+        if user_input.lower() in ("exit", "quit", "q"):
+            console.print("[dim]Goodbye.[/dim]")
+            break
+
+        # Send to agent
+        with Progress(SpinnerColumn(), TextColumn("[bold blue]Thinking..."),
+                      console=console, transient=True) as prog:
+            prog.add_task("think", total=None)
+            result = agent.plan(user_input, system_state=manager.system_state)
+
+        # Clarification — agent needs more info
+        if result.clarification:
+            console.print(f"\n  [yellow]{result.clarification}[/yellow]\n")
+            continue
+
+        # Error — couldn't parse or validate
+        if result.error:
+            console.print(f"\n  [red]{result.error}[/red]\n")
+            continue
+
+        # Show the plan
+        console.print()
+        console.print(f"  [bold]Plan:[/bold] {result.explanation}")
+        if result.validation and result.validation.valid:
+            console.print(f"  [green]VALID[/green] — {result.validation.steps_validated} steps")
+        else:
+            console.print(f"  [red]INVALID[/red]")
+            if result.validation:
+                for err in result.validation.errors:
+                    console.print(f"    [red]{err.message}[/red]")
+            console.print()
+            continue
+
+        console.print(f"  [dim]JSON: {json.dumps(result.plan)}[/dim]")
+        console.print()
+
+        # Ask to execute
+        try:
+            execute = typer.confirm("  Execute this plan?", default=True)
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[dim]Skipped.[/dim]")
+            continue
+
+        if not execute:
+            console.print("  [dim]Skipped.[/dim]\n")
+            continue
+
+        # Execute
+        with Progress(SpinnerColumn(), TextColumn("[bold]Executing..."),
+                      console=console, transient=True) as prog:
+            prog.add_task("exec", total=None)
+            exec_result = _run(agent.plan_and_execute(user_input, manager=manager))
+
+        console.print()
+        for step in exec_result.execution_results:
+            tool = step.get("tool", "?")
+            if "error" in step:
+                console.print(f"  [red]✗[/red] {tool}: {step['error']}")
+            else:
+                status = step.get("status", step.get("stdout", "done"))
+                vm_id = step.get("vm_id", "")
+                extra = f" ({vm_id})" if vm_id else ""
+                console.print(f"  [green]✓[/green] {tool}{extra}: {status}")
+
+        if exec_result.error:
+            console.print(f"\n  [red]{exec_result.error}[/red]")
+        console.print()
 
 
 # ---------------------------------------------------------------------------

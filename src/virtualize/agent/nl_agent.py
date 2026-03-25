@@ -127,6 +127,9 @@ RULES:
 7. Only output valid JSON. No markdown, no explanation, no comments.
 8. Use sensible defaults: linux OS, 2 vCPUs, 2048MB RAM, 20GB disk
 9. If the user wants to "connect to" something, create a VM, start it, and run a relevant command
+10. If the request is vague or unclear, output: {{"clarify": "your question to the user"}}
+11. If the user says "run something" without specifics, ask what they want to run.
+12. Try your best to infer intent. Only ask for clarification if truly ambiguous.
 
 EXAMPLES:
 
@@ -144,6 +147,15 @@ Output: [["compliance_report", null, {{"framework": "hipaa"}}]]
 
 User: start me a vm that i can connect to openclaw
 Output: [["vm_create", null, {{"name": "openclaw-vm"}}], ["vm_start", "openclaw-vm", {{}}], ["vm_exec", "openclaw-vm", {{"command": "pip install openclaw && python -m openclaw"}}]]
+
+User: run something
+Output: {{"clarify": "What would you like to run? For example: a shell command in a VM, some Python code in a sandbox, or a compliance check?"}}
+
+User: hello
+Output: {{"clarify": "Hey! I can help you manage VMs, run code, or check compliance. What would you like to do?"}}
+
+User: help
+Output: {{"clarify": "I can: create/start/stop/destroy VMs, run commands inside VMs, execute sandboxed code, check compliance (soc2, hipaa, iso27001), or verify the algebra. What do you need?"}}
 """
 
 
@@ -161,6 +173,7 @@ class AgentResult:
     executed: bool = False
     execution_results: list[dict[str, Any]] = field(default_factory=list)
     explanation: str = ""
+    clarification: str | None = None
     error: str | None = None
 
 
@@ -215,6 +228,12 @@ class NLAgent:
             raw = response["choices"][0]["message"]["content"].strip()
             logger.debug("LLM attempt %d: %s", attempt, raw)
 
+            # Check for clarification response
+            clarification = self._extract_clarification(raw)
+            if clarification is not None:
+                result.clarification = clarification
+                return result
+
             # Parse JSON from response
             plan = self._extract_plan(raw)
             if plan is None:
@@ -222,7 +241,9 @@ class NLAgent:
                     messages.append({"role": "assistant", "content": raw})
                     messages.append({"role": "user", "content":
                         "That was not valid JSON. Output ONLY a JSON array of steps like: "
-                        '[[\"vm_create\", null, {\"name\": \"x\"}]]. No text, just JSON.'
+                        '[[\"vm_create\", null, {\"name\": \"x\"}]]. '
+                        'Or if the request is unclear: {\"clarify\": \"your question\"}. '
+                        'No other text.'
                     })
                     continue
                 result.error = f"Failed to parse LLM output as JSON after {attempt + 1} attempts: {raw}"
@@ -343,6 +364,20 @@ class NLAgent:
 
         else:
             return {"tool": tool_name, "note": "no-op (observation only)"}
+
+    def _extract_clarification(self, raw: str) -> str | None:
+        """Check if the LLM is asking for clarification instead of planning."""
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict) and "clarify" in data:
+                return str(data["clarify"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+        # Also try to find {"clarify": "..."} embedded in text
+        match = re.search(r'\{[^}]*"clarify"\s*:\s*"([^"]*)"[^}]*\}', raw)
+        if match:
+            return match.group(1)
+        return None
 
     def _extract_plan(self, raw: str) -> list[tuple[str, str | None, dict]] | None:
         """Extract a JSON plan from LLM output, tolerating surrounding text."""
